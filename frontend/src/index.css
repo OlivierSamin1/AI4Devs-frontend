@@ -11,3 +11,34 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Position page styles */
+.rating-dot {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  margin: 0 3px;
+}
+
+.interview-column .card-header {
+  background-color: #f8f9fa;
+  font-weight: bold;
+}
+
+.candidate-card {
+  transition: transform 0.2s;
+  cursor: pointer;
+}
+
+.candidate-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 768px) {
+  .interview-columns-container {
+    overflow-x: auto;
+    padding-bottom: 15px;
+  }
+}

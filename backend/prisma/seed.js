@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+const { PrismaClient } = require('@prisma/client');
 
-// Initialize Prisma Client with just the required parameters
+// Create a basic PrismaClient instance without any custom options
 const prisma = new PrismaClient();
 
 async function main() {
@@ -212,8 +212,6 @@ async function main() {
     },
   });
 
-  
-
   // Create Interview Steps
   const interviewStep1 = await prisma.interviewStep.create({
     data: {
@@ -298,7 +296,6 @@ async function main() {
     },
   });
 
-
   // Create Interviews
   await prisma.interview.createMany({
     data: [
@@ -340,4 +337,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-  });
+  }); 
