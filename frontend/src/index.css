@@ -36,6 +36,24 @@ code {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* Drag and drop styles */
+.candidate-card[draggable="true"] {
+  cursor: grab;
+}
+
+.candidate-card[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.interview-column.drop-target .card {
+  border: 2px dashed #007bff !important;
+  background-color: rgba(0, 123, 255, 0.05) !important;
+}
+
+.interview-column .card-body {
+  min-height: 100px;
+}
+
 @media (max-width: 768px) {
   .interview-columns-container {
     overflow-x: auto;

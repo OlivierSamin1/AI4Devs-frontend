@@ -20,4 +20,17 @@ export const fetchInterviewFlow = async (positionId) => {
     console.error('Error fetching interview flow:', error);
     throw error;
   }
+};
+
+export const updateCandidateStage = async (candidateId, applicationId, newStageId) => {
+  try {
+    const response = await axios.put(`${API_URL}/candidates/${candidateId}`, {
+      applicationId: applicationId,
+      currentInterviewStep: newStageId
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating candidate stage:', error);
+    throw error;
+  }
 }; 

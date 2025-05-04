@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card } from 'react-bootstrap';
+import { Container, Row, Col, Card, Toast } from 'react-bootstrap';
 import { useParams } from 'react-router-dom';
-import { fetchPositionCandidates, fetchInterviewFlow } from '../services/positionService';
+import { fetchPositionCandidates, fetchInterviewFlow, updateCandidateStage } from '../services/positionService';
 
 // Component to render a candidate card
-const CandidateCard = ({ candidate }) => {
+const CandidateCard = ({ candidate, onDragStart }) => {
   // Generate rating dots based on average score
   const renderRating = (score) => {
     // Only render the number of dots equal to the score (not fixed at 5)
@@ -23,8 +23,23 @@ const CandidateCard = ({ candidate }) => {
     return <div className="mt-1">{dots}</div>;
   };
 
+  const handleDragStart = (e) => {
+    e.dataTransfer.setData('candidateId', candidate.id);
+    e.dataTransfer.setData('applicationId', candidate.applicationId);
+    onDragStart(true);
+  };
+
+  const handleDragEnd = () => {
+    onDragStart(false);
+  };
+
   return (
-    <Card className="mb-3 shadow-sm candidate-card border-0">
+    <Card 
+      className="mb-3 shadow-sm candidate-card border-0"
+      draggable="true"
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
       <Card.Body className="py-2">
         <div className="mb-1">{candidate.fullName}</div>
         {renderRating(candidate.averageScore)}
@@ -34,22 +49,46 @@ const CandidateCard = ({ candidate }) => {
 };
 
 // Component to render an interview stage column
-const InterviewColumn = ({ stage, candidates }) => {
-  // Filter candidates that are in this stage
+const InterviewColumn = ({ stage, candidates, interviewSteps, onDrop, isDragging }) => {
+  // Get current stage name
+  const stageName = stage.name;
+  
+  // Filter candidates that are in this stage by comparing the stage name
   const stagesCandidates = candidates.filter(
-    candidate => candidate.currentInterviewStep === stage.name
+    candidate => candidate.currentInterviewStep === stageName
   );
 
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const candidateId = e.dataTransfer.getData('candidateId');
+    const applicationId = e.dataTransfer.getData('applicationId');
+    
+    // Call the parent handler
+    onDrop(Number(candidateId), Number(applicationId), stage.id);
+  };
+
   return (
-    <Col className="interview-column">
+    <Col 
+      className={`interview-column ${isDragging ? 'drop-target' : ''}`}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <Card className="mb-4 shadow-sm h-100" style={{ backgroundColor: 'white' }}>
         <Card.Header className="text-center" style={{ backgroundColor: 'white' }}>
-          <h5>{stage.name}</h5>
+          <h5>{stageName}</h5>
         </Card.Header>
         <Card.Body>
           {stagesCandidates.length > 0 ? (
             stagesCandidates.map((candidate) => (
-              <CandidateCard key={candidate.id} candidate={candidate} />
+              <CandidateCard 
+                key={candidate.id} 
+                candidate={candidate} 
+                onDragStart={(isDragging) => onDrop(null, null, null, isDragging)}
+              />
             ))
           ) : (
             <p className="text-center text-muted">No candidates in this stage</p>
@@ -66,6 +105,8 @@ const Position = () => {
   const [interviewFlow, setInterviewFlow] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -88,6 +129,58 @@ const Position = () => {
 
     fetchData();
   }, [id]);
+
+  const handleCandidateDrop = async (candidateId, applicationId, newStageId, dragState) => {
+    // If this is just a drag state update, handle it separately
+    if (dragState !== undefined) {
+      setIsDragging(dragState);
+      return;
+    }
+    
+    // If any parameter is null, just return (this happens during drag state updates)
+    if (!candidateId || !applicationId || !newStageId) {
+      return;
+    }
+
+    try {
+      // Call the API to update the candidate's stage
+      await updateCandidateStage(candidateId, applicationId, newStageId);
+      
+      // Update the local state to reflect the change
+      setCandidates(prevCandidates => {
+        return prevCandidates.map(candidate => {
+          if (candidate.id === candidateId) {
+            // Find the new stage name using the newStageId
+            const newStage = interviewFlow.interviewFlow.interviewSteps.find(
+              step => step.id === newStageId
+            );
+            
+            return {
+              ...candidate,
+              currentInterviewStep: newStage ? newStage.name : candidate.currentInterviewStep
+            };
+          }
+          return candidate;
+        });
+      });
+
+      // Show success notification
+      setNotification({
+        show: true,
+        message: 'Candidate moved successfully',
+        type: 'success'
+      });
+    } catch (err) {
+      console.error('Error moving candidate:', err);
+      
+      // Show error notification
+      setNotification({
+        show: true,
+        message: 'Failed to move candidate. Please try again.',
+        type: 'danger'
+      });
+    }
+  };
 
   if (loading) {
     return (
@@ -127,12 +220,37 @@ const Position = () => {
                 <InterviewColumn 
                   key={stage.id} 
                   stage={stage} 
-                  candidates={candidates} 
+                  candidates={candidates}
+                  interviewSteps={interviewFlow.interviewFlow.interviewSteps}
+                  onDrop={handleCandidateDrop}
+                  isDragging={isDragging}
                 />
               ))
             }
           </Row>
         </div>
+
+        {/* Notification Toast */}
+        <Toast 
+          show={notification.show}
+          onClose={() => setNotification({ ...notification, show: false })} 
+          delay={3000} 
+          autohide
+          style={{
+            position: 'fixed',
+            bottom: 20,
+            right: 20,
+            minWidth: '250px'
+          }}
+          bg={notification.type}
+        >
+          <Toast.Header>
+            <strong className="me-auto">Notification</strong>
+          </Toast.Header>
+          <Toast.Body className={notification.type === 'danger' ? 'text-white' : ''}>
+            {notification.message}
+          </Toast.Body>
+        </Toast>
       </Container>
     </div>
   );
