@@ -201,3 +201,8 @@ dispatchEvent @ react-dom.development.js:6457
 dispatchDiscreteEvent @ react-dom.development.js:6430
 
 Remember that the applicationId must be the one coming from the endpoint interviewFlow not the candidate id value
+
+
+**Prompt 6**:
+everything is fine. Now I need to make it work also in mobile. So far it is not working
+

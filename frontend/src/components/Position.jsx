@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Card, Toast } from 'react-bootstrap';
 import { useParams } from 'react-router-dom';
 import { fetchPositionCandidates, fetchInterviewFlow, updateCandidateStage } from '../services/positionService';
 
 // Component to render a candidate card
-const CandidateCard = ({ candidate, onDragStart }) => {
+const CandidateCard = ({ candidate, onDragStart, onTouchStart }) => {
   // Generate rating dots based on average score
   const renderRating = (score) => {
     // Only render the number of dots equal to the score (not fixed at 5)
@@ -33,12 +33,22 @@ const CandidateCard = ({ candidate, onDragStart }) => {
     onDragStart(false);
   };
 
+  const handleTouchStart = (e) => {
+    // Only prevent default if we're in a draggable context
+    // This allows normal scrolling to still work when not dragging
+    if (e.touches && e.touches.length === 1) {
+      // Store touch position for potential drag
+      onTouchStart(candidate);
+    }
+  };
+
   return (
     <Card 
       className="mb-3 shadow-sm candidate-card border-0"
       draggable="true"
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onTouchStart={handleTouchStart}
     >
       <Card.Body className="py-2">
         <div className="mb-1">{candidate.fullName}</div>
@@ -49,7 +59,16 @@ const CandidateCard = ({ candidate, onDragStart }) => {
 };
 
 // Component to render an interview stage column
-const InterviewColumn = ({ stage, candidates, interviewSteps, onDrop, isDragging }) => {
+const InterviewColumn = ({ 
+  stage, 
+  candidates, 
+  interviewSteps, 
+  onDrop, 
+  isDragging, 
+  onColumnTouch,
+  isActiveTouchTarget,
+  columnIndex
+}) => {
   // Get current stage name
   const stageName = stage.name;
   
@@ -70,12 +89,20 @@ const InterviewColumn = ({ stage, candidates, interviewSteps, onDrop, isDragging
     // Call the parent handler
     onDrop(Number(candidateId), Number(applicationId), stage.id);
   };
+  
+  // Handle touch on the column itself
+  const handleTouchStart = () => {
+    // Only trigger if we're already dragging a candidate
+    onColumnTouch(columnIndex, stage.id);
+  };
 
   return (
     <Col 
-      className={`interview-column ${isDragging ? 'drop-target' : ''}`}
+      className={`interview-column ${isDragging ? 'drop-target' : ''} ${isActiveTouchTarget ? 'touch-target' : ''}`}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onTouchStart={handleTouchStart}
+      data-column-index={columnIndex}
     >
       <Card className="mb-4 shadow-sm h-100" style={{ backgroundColor: 'white' }}>
         <Card.Header className="text-center" style={{ backgroundColor: 'white' }}>
@@ -88,6 +115,7 @@ const InterviewColumn = ({ stage, candidates, interviewSteps, onDrop, isDragging
                 key={candidate.id} 
                 candidate={candidate} 
                 onDragStart={(isDragging) => onDrop(null, null, null, isDragging)}
+                onTouchStart={(candidate) => onColumnTouch(columnIndex, stage.id, candidate)}
               />
             ))
           ) : (
@@ -107,6 +135,13 @@ const Position = () => {
   const [error, setError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
+  
+  // Mobile touch state
+  const [activeTouchColumn, setActiveTouchColumn] = useState(null);
+  const [touchDraggedCandidate, setTouchDraggedCandidate] = useState(null);
+  const [touchTargetStageId, setTouchTargetStageId] = useState(null);
+  const [showMobileControls, setShowMobileControls] = useState(false);
+  const containerRef = useRef(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -129,6 +164,83 @@ const Position = () => {
 
     fetchData();
   }, [id]);
+
+  // Handle touch events for mobile drag and drop
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const handleTouchMove = (e) => {
+      if (!touchDraggedCandidate) return;
+      
+      // Get all column elements
+      const columns = document.querySelectorAll('.interview-column');
+      
+      // Find which column the touch is over
+      const touch = e.touches[0];
+      const touchX = touch.clientX;
+      const touchY = touch.clientY;
+      
+      let targetColumn = null;
+      
+      columns.forEach((column, index) => {
+        const rect = column.getBoundingClientRect();
+        if (
+          touchX >= rect.left && 
+          touchX <= rect.right && 
+          touchY >= rect.top && 
+          touchY <= rect.bottom
+        ) {
+          targetColumn = index;
+        }
+      });
+      
+      if (targetColumn !== null && targetColumn !== activeTouchColumn) {
+        const stageId = interviewFlow.interviewFlow.interviewSteps[targetColumn].id;
+        setActiveTouchColumn(targetColumn);
+        setTouchTargetStageId(stageId);
+      }
+    };
+    
+    const handleTouchEnd = () => {
+      if (touchDraggedCandidate && touchTargetStageId && activeTouchColumn !== null) {
+        // Confirm and execute the drop
+        handleCandidateDrop(
+          touchDraggedCandidate.id, 
+          touchDraggedCandidate.applicationId, 
+          touchTargetStageId
+        );
+      }
+      
+      // Reset touch state
+      setTouchDraggedCandidate(null);
+      setActiveTouchColumn(null);
+      setTouchTargetStageId(null);
+      setShowMobileControls(false);
+    };
+    
+    // Use event options to specify passive: false to allow preventDefault calls
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+    
+    return () => {
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [touchDraggedCandidate, activeTouchColumn, touchTargetStageId, interviewFlow]);
+
+  const handleTouchColumnEnter = (columnIndex, stageId, candidate = null) => {
+    if (candidate) {
+      // A card was touched, start dragging
+      setTouchDraggedCandidate(candidate);
+      setShowMobileControls(true);
+    }
+    
+    if (touchDraggedCandidate) {
+      // Update the active column during drag
+      setActiveTouchColumn(columnIndex);
+      setTouchTargetStageId(stageId);
+    }
+  };
 
   const handleCandidateDrop = async (candidateId, applicationId, newStageId, dragState) => {
     // If this is just a drag state update, handle it separately
@@ -208,15 +320,26 @@ const Position = () => {
   }
 
   return (
-    <div style={{ backgroundColor: '#e9ecef', minHeight: '100vh', paddingTop: '20px', paddingBottom: '20px' }}>
-      <Container className="my-5">
+    <div 
+      style={{ backgroundColor: '#e9ecef', minHeight: '100vh', paddingTop: '20px', paddingBottom: '20px' }}
+      ref={containerRef}
+    >
+      <Container className="my-5 position-relative">
         <h2 className="text-center mb-4">{interviewFlow.positionName}</h2>
+        
+        {/* Mobile drag indicator */}
+        {showMobileControls && touchDraggedCandidate && (
+          <div className="mobile-drag-indicator">
+            <p>Dragging: {touchDraggedCandidate.fullName}</p>
+            <p>Move to a different column to change stage</p>
+          </div>
+        )}
         
         <div className="interview-columns-container">
           <Row xs={1} md={interviewFlow.interviewFlow.interviewSteps.length} className="g-4">
             {interviewFlow.interviewFlow.interviewSteps
               .sort((a, b) => a.orderIndex - b.orderIndex)
-              .map((stage) => (
+              .map((stage, index) => (
                 <InterviewColumn 
                   key={stage.id} 
                   stage={stage} 
@@ -224,6 +347,9 @@ const Position = () => {
                   interviewSteps={interviewFlow.interviewFlow.interviewSteps}
                   onDrop={handleCandidateDrop}
                   isDragging={isDragging}
+                  onColumnTouch={handleTouchColumnEnter}
+                  isActiveTouchTarget={activeTouchColumn === index}
+                  columnIndex={index}
                 />
               ))
             }
